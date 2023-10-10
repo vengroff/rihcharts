@@ -24,9 +24,10 @@ YEAR := 2021
 DATA_BUILD_DIR := $(RIHDATA_ROOT)/build-$(YEAR)
 DATA_BUILD_WORKING_DIR := $(DATA_BUILD_DIR)/working
 DATA_DIR := $(RIHDATA_ROOT)/data-$(YEAR)
-# Probably more optimization to this repo and do only pure data pipeline
-# stuff in the rihdata project.
-PARAMS_DIR := $(DATA_BUILD_DIR)/params
+
+# Local build.
+BUILD_DIR := ./build-$(YEAR)
+PARAMS_DIR := $(BUILD_DIR)/params
 
 # Python config.
 PYTHON = python3.11
@@ -46,12 +47,30 @@ N := 50
 TOP_N_LIST_FILE := $(DATA_BUILD_WORKING_DIR)/top_$(N)_$(YEAR)_cbsa.txt
 TOP_N := $(shell cat $(TOP_N_LIST_FILE))
 
+TOP_N_PARAMS := $(TOP_N_DATA:$(DATA_DIR)/%.geojson=$(PARAMS_DIR)/%.params.yaml)
+
 TOP_N_DATA := $(patsubst %,$(DATA_DIR)/%,$(TOP_N))
 
 # Where do plots go?
 PLOT_DIR := ./plots-$(YEAR)
 SHAP_PLOT_DIR := $(PLOT_DIR)/shap
 TOP_N_SHAP_PLOT_DIRS := $(TOP_N_DATA:$(DATA_DIR)/%.geojson=$(SHAP_PLOT_DIR)/%)
+
+# How to go from a data file for a single CBSA to a parameter file.
+# for the same CBSA.
+$(PARAMS_DIR)/%.params.yaml: $(DATA_DIR)/%.geojson
+	mkdir -p $(@D)
+	$(PYTHON) -m rih.treegress --log $(LOGLEVEL) -v $(YEAR) $(GROUP_HISPANIC_LATINO) -o $@ $<
+
+# How to build the file that ranks the CBSAs by score. This is a
+# summary file that is useful for undeRstanding which CBSAs fit
+# well and which did not fit as well. It requires
+# a parameter file from each of the top N CBSAs. It also requires
+# a linear regression results file for each of them, since it puts
+# these scores in the output file also.
+$(RANKED_FILE): $(TOP_N_PARAMS) $(TOP_N_LINREG)
+	mkdir -p $(@D)
+	$(PYTHON) -m rih.rankscore -o $@ $(TOP_N_PARAMS)
 
 # Produce a series of plots for the influence of each of several
 # features on the output of the model for a single CBSA. All of
@@ -64,9 +83,16 @@ $(SHAP_PLOT_DIR)/%: $(PARAMS_DIR)/%.params.yaml $(DATA_DIR)/%.geojson
 	$(PYTHON) -m rih.charts.shapplot --log $(LOGLEVEL) --background -v $(YEAR) $(GROUP_HISPANIC_LATINO) -p $(PARAMS_DIR)/$*.params.yaml -o $@ $(DATA_DIR)/$*.geojson
 	touch $@
 
-.PHONY: all shap_plots clean clean_plots list_top_n
+# An output file that ranks the performance of the model
+# on the top N CBSAs. This is the top level output that
+# our default targer `all` builds along with plots.
+RANKED_FILE :=  $(PARAMS_DIR)/ranked_$(N)_$(YEAR)_cbsa.csv
+
+.PHONY: all shap_plots clean clean_plots params list_top_n
 
 all: shap_plots
+
+params: $(TOP_N_PARAMS)
 
 shap_plots: $(TOP_N_SHAP_PLOT_DIRS)
 

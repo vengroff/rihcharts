@@ -10,6 +10,7 @@ python = "^3.11"
 impactchart = "^0.1.0"
 PyYAML = "^6.0"
 censusdis = "^0.16.0"
+bayesian-optimization = "^1.4.2"
 
 
 [build-system]
