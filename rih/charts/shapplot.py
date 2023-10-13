@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Dict, Any
 
 import censusdis.data as ced
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import shap
@@ -13,6 +12,7 @@ import yaml
 from impactchart.model import XGBoostImpactModel, KnnImpactModel
 from censusdis.datasets import ACS5
 from matplotlib.ticker import FuncFormatter, PercentFormatter
+from scipy.spatial.distance import minkowski
 
 import rih.util as util
 from rih.loggingargparser import LoggingArgumentParser
@@ -87,16 +87,19 @@ def main():
     parser.add_argument("--group-hispanic-latino", action="store_true")
 
     parser.add_argument(
-        "-p",
-        "--param_file",
-        required=True,
-        help="Parameter file, as created by treegress.py",
+        "-m",
+        "--model-type",
+        type=str,
+        choices=["xgb", "knn"],
+        default="xgb",
+        help="Note: knn is experimental and performance is currently terrible. "
+        "Avoid unless you are actively developing improvements.",
     )
 
     parser.add_argument(
-        '-m', '--model-type', type=str,
-        choices=["xgb", 'knn'],
-        default='xgb'
+        "-t",
+        "--tree-param_file",
+        help="Tree parameter file, as created by treegress.py",
     )
 
     parser.add_argument(
@@ -114,12 +117,15 @@ def main():
 
     output_dir = args.output_dir
 
-    logging.info(f"{args.input_file} + {args.param_file} -> {args.output_dir}")
+    if args.model_type == "xgb":
+        with open(args.tree_param_file) as f:
+            result = yaml.full_load(f)
 
-    with open(args.param_file) as f:
-        result = yaml.full_load(f)
-
-    params = result["params"]
+        params = result["params"]
+    elif args.model_type == "knn":
+        params = {}
+    else:
+        logger.warning(f"Unrecognized model type {args.model_type}.")
 
     gdf_cbsa_bg = read_data(args.input_file, drop_outliers=True)
 
@@ -129,17 +135,9 @@ def main():
     k = 5  # 50
     seed = 0x6A1C55E7
 
-    if args.model_type == 'xgb':
-        impact_model = XGBoostImpactModel(
-            ensemble_size=k,
-            random_state=seed,
-            estimator_kwargs=params
-        )
-    else:
-        impact_model = KnnImpactModel(
-            ensemble_size=k,
-            random_state=seed,
-        )
+    # Median household income in last 12 months.
+    # See https://api.census.gov/data/2021/acs/acs5/groups/B19013.html
+    income_features = ["B19013_001E"]
 
     # Fractional demographic features go into the X.
     # Note that we use the ones that are in the data set,
@@ -150,29 +148,43 @@ def main():
     fractional_demographic_features = [
         feature
         for feature in gdf_cbsa_bg.columns
-        if feature.startswith('frac_B03002_') and 'frac_B03002_003E' <= feature <= 'frac_B03002_012E'
-    ]
-
-    # Median household income in last 12 months.
-    # See https://api.census.gov/data/2021/acs/acs5/groups/B19013.html
-    income_features = [
-        'B19013_001E'
+        if feature.startswith("frac_B03002_")
+        and "frac_B03002_003E" <= feature <= "frac_B03002_012E"
     ]
 
     x_features = fractional_demographic_features + income_features
-
-    # Total owner-occupied households.
-    # See https://api.census.gov/data/2020/acs/acs5/groups/B25003.html
-    sample_weight_col = "B25003_002E"
 
     # Median home value.
     # See https://api.census.gov/data/2021/acs/acs5/groups/B25077.html
     y_col = "B25077_001E"
 
+    if args.model_type == "xgb":
+        impact_model = XGBoostImpactModel(
+            ensemble_size=k, random_state=seed, estimator_kwargs=params
+        )
+        # Total owner-occupied households.
+        # See https://api.census.gov/data/2020/acs/acs5/groups/B25003.html
+        sample_weight_col = "B25003_002E"
+
+        sample_weight = gdf_cbsa_bg[sample_weight_col]
+    else:
+        weights = np.ones(len(x_features))
+        # We scale down the median income by the max
+        # value it has in the census.
+        weights[-1] = 1 / 250_000.0
+
+        def _income_scaled_minkowski(u, v):
+            return minkowski(u, v, p=2, w=weights)
+
+        impact_model = KnnImpactModel(
+            ensemble_size=k,
+            random_state=seed,
+            estimator_kwargs={"metric": _income_scaled_minkowski},
+        )
+        sample_weight = None
+
     impact_model.fit(
-        gdf_cbsa_bg[x_features],
-        gdf_cbsa_bg[y_col],
-        gdf_cbsa_bg[sample_weight_col]
+        gdf_cbsa_bg[x_features], gdf_cbsa_bg[y_col], sample_weight=sample_weight
     )
 
     logger.info("Generating impact charts.")
@@ -182,13 +194,12 @@ def main():
         x_features,
         subplots_kwargs=dict(
             figsize=(12, 8),
-        )
+        ),
     )
 
     year = args.vintage
 
     for feature in x_features:
-
         logger.info(f"Plotting {feature}.")
 
         name = Path(output_dir).parent.name.replace("_", " ")
@@ -205,7 +216,7 @@ def main():
 
 def _style_impact_chart(ax, feature, year, name, plot_id):
     """Add style to the basic impact chart the library gives us."""
-    col_is_fractional = feature.startswith('frac_')
+    col_is_fractional = feature.startswith("frac_")
 
     # All the variables in both groups that become a part of our X.
     all_variables = pd.concat(
@@ -215,7 +226,7 @@ def _style_impact_chart(ax, feature, year, name, plot_id):
         ]
     )
 
-    feature_base = feature.replace('frac_', "")
+    feature_base = feature.replace("frac_", "")
 
     label = all_variables[all_variables["VARIABLE"] == feature_base]["LABEL"].iloc[0]
     label = label.replace("Estimate!!", "")

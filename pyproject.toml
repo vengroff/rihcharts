@@ -7,11 +7,15 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-impactchart = "^0.1.0"
+impactchart = "^0.1.1"
 PyYAML = "^6.0"
 censusdis = "^0.16.0"
 bayesian-optimization = "^1.4.2"
 
+[tool.poetry.group.lint.dependencies]
+flake8 = "^5.0.4"
+black = "^23.1.0"
+isort = "^5.10.1"
 
 [build-system]
 requires = ["poetry-core"]
