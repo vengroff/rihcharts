@@ -47,9 +47,9 @@ N := 50
 TOP_N_LIST_FILE := $(DATA_BUILD_WORKING_DIR)/top_$(N)_$(YEAR)_cbsa.txt
 TOP_N := $(shell cat $(TOP_N_LIST_FILE))
 
-TOP_N_XGB_PARAMS := $(TOP_N_DATA:$(DATA_DIR)/%.geojson=$(XGB_PARAMS_DIR)/%.params.yaml)
-
 TOP_N_DATA := $(patsubst %,$(DATA_DIR)/%,$(TOP_N))
+
+TOP_N_XGB_PARAMS := $(TOP_N_DATA:$(DATA_DIR)/%.geojson=$(XGB_PARAMS_DIR)/%.params.yaml)
 
 # Where do plots go?
 PLOT_DIR := ./plots-$(YEAR)
@@ -60,7 +60,8 @@ SHAP_PLOT_KNN_DIR := $(SHAP_PLOT_DIR)/knn
 TOP_N_SHAP_PLOT_XGB_DIRS := $(TOP_N_DATA:$(DATA_DIR)/%.geojson=$(SHAP_PLOT_XGB_DIR)/%)
 TOP_N_SHAP_PLOT_KNN_DIRS := $(TOP_N_DATA:$(DATA_DIR)/%.geojson=$(SHAP_PLOT_KNN_DIR)/%)
 
-TOP_N_SHAP_PLOT_DIRS := $(TOP_N_SHAP_PLOT_XGB_DIRS) $(TOP_N_SHAP_PLOT_KNN_DIRS)
+# Note that KNN is experimental and extremely slow.
+TOP_N_SHAP_PLOT_DIRS := $(TOP_N_SHAP_PLOT_XGB_DIRS)  # $(TOP_N_SHAP_PLOT_KNN_DIRS)
 
 # How to go from a data file for a single CBSA to a parameter file.
 # for the same CBSA.
@@ -74,9 +75,9 @@ $(XGB_PARAMS_DIR)/%.params.yaml: $(DATA_DIR)/%.geojson
 # a parameter file from each of the top N CBSAs. It also requires
 # a linear regression results file for each of them, since it puts
 # these scores in the output file also.
-$(RANKED_FILE): $(TOP_N_PARAMS) $(TOP_N_LINREG)
+$(RANKED_FILE): $(TOP_N_XGB_PARAMS) $(TOP_N_LINREG)
 	mkdir -p $(@D)
-	$(PYTHON) -m rih.rankscore -o $@ $(TOP_N_PARAMS)
+	$(PYTHON) -m rih.rankscore -o $@ $(TOP_N_XGB_PARAMS)
 
 # Produce a series of plots for the influence of each of several
 # features on the output of the model for a single CBSA. All of
@@ -105,7 +106,7 @@ RANKED_FILE :=  $(XGB_PARAMS_DIR)/ranked_$(N)_$(YEAR)_cbsa.csv
 
 all: shap_plots
 
-params: $(TOP_N_PARAMS)
+params: $(TOP_N_XGB_PARAMS)
 
 shap_plots: $(TOP_N_SHAP_PLOT_DIRS)
 
