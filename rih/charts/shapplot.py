@@ -106,6 +106,8 @@ def main():
         "-o", "--output-dir", required=True, help="Output directory for plots."
     )
 
+    parser.add_argument("-k", "--ensemble-size", type=int, default=50)
+
     parser.add_argument("-r", "--add_relative", default=True, action="store_true")
 
     parser.add_argument("--background", default=False, action=BooleanOptionalAction)
@@ -129,10 +131,8 @@ def main():
 
     gdf_cbsa_bg = read_data(args.input_file, drop_outliers=True)
 
-    print(gdf_cbsa_bg.columns)
-
     n = len(gdf_cbsa_bg.index)
-    k = 5  # 50
+    k = args.ensemble_size
     seed = 0x6A1C55E7
 
     # Median household income in last 12 months.
@@ -209,7 +209,7 @@ def main():
 
         label = _style_impact_chart(ax, feature, year, name, plot_id)
 
-        filename = label.replace(" ", "-").replace(";", "")
+        filename = label.replace("(", "-").replace(")", "-").replace(" ", "-").replace(";", "")
         logger.info(f"Saving output to {filename}")
         fig.savefig(Path(output_dir) / f"{filename}.png")
 
