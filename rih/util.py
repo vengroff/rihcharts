@@ -240,33 +240,6 @@ def add_fractional_population(leaves_race_ethnicity, df: pd.DataFrame) -> pd.Dat
     return df
 
 
-def xgb_r2_objective(X_train, X_test, y_train, y_test, w_train, w_test):
-    def objective(n_estimators, max_depth):
-        # Truncate to ints as suggested in
-        # https://github.com/fmfn/BayesianOptimization/blob/master/examples/advanced-tour.ipynb
-        xgb = xgboost.XGBRegressor(
-            n_estimators=int(np.round(n_estimators)),
-            max_depth=int(np.round(max_depth)),
-        )
-        xgb = xgb.fit(X=X_train, y=y_train, sample_weight=w_train)
-        score = xgb.score(X=X_test, y=y_test, sample_weight=w_test)
-        return score
-
-    return objective
-
-
-def split_xyw(df, demographic_fraction_vars):
-    X = df[[VARIABLE_MEDIAN_INCOME] + demographic_fraction_vars]
-    y = df[VARIABLE_MEDIAN_VALUE]
-    w = df[VARIABLE_TOTAL_OWNER_OCCUPIED]
-
-    X_train, X_test, y_train, y_test, w_train, w_test = train_test_split(
-        X, y, w, test_size=0.2, random_state=17
-    )
-
-    return X_train, X_test, y_train, y_test, w_train, w_test
-
-
 def force_plots(cbsa_short_name, shap_values, X_test, output_dir: str):
     dollar_formatter = FuncFormatter(
         lambda d, pos: f"\\${d:,.0f}" if d >= 0 else f"(\\${-d:,.0f})"

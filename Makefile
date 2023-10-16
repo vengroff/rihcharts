@@ -25,6 +25,11 @@ DATA_BUILD_DIR := $(RIHDATA_ROOT)/build-$(YEAR)
 DATA_BUILD_WORKING_DIR := $(DATA_BUILD_DIR)/working
 DATA_DIR := $(RIHDATA_ROOT)/data-$(YEAR)
 
+# Plots made in the rihdata project.
+RIH_PLOT_DIR := $(RIHDATA_ROOT)/plots-$(YEAR)
+PRICE_PLOT_DIR := $(RIH_PLOT_DIR)/price-income
+PRICE_FEATURE_PLOT_DIR := $(RIH_PLOT_DIR)/price-feature
+
 # Local build.
 BUILD_DIR := ./build-$(YEAR)
 XGB_PARAMS_DIR := $(BUILD_DIR)/xgb-params
@@ -95,14 +100,22 @@ $(SHAP_PLOT_DIR)/knn/%: $(XGB_PARAMS_DIR)/%.params.yaml $(DATA_DIR)/%.geojson
 	$(PYTHON) -m rih.charts.shapplot --log $(LOGLEVEL) -m knn --background -v $(YEAR) $(GROUP_HISPANIC_LATINO) -t $(XGB_PARAMS_DIR)/$*.params.yaml -o $@ $(DATA_DIR)/$*.geojson
 	touch $@
 
-
-
 # An output file that ranks the performance of the model
 # on the top N CBSAs. This is the top level output that
 # our default targer `all` builds along with plots.
 RANKED_FILE :=  $(XGB_PARAMS_DIR)/ranked_$(N)_$(YEAR)_cbsa.csv
 
-.PHONY: all shap_plots clean clean_plots params list_top_n
+# Templates and related details for rendering the site.
+HTML_TEMPLATE_DIR := ./templates
+STATIC_HTML_DIR := ./static-html
+SITE_DIR := $(BUILD_DIR)/site
+SITE_IMAGE_DIR := $(SITE_DIR)/images
+
+HTML_NAMES := impact.html
+SITE_HTML := $(HTML_NAMES:%=$(SITE_DIR)/%)
+HTML_TEMPLATES := $(HTML_NAMES:%.html=$(HTML_TEMPLATE_DIR)/%.html.j2)
+
+.PHONY: all shap_plots site_html clean clean_plots params list_top_n
 
 all: shap_plots
 
@@ -110,11 +123,30 @@ params: $(TOP_N_XGB_PARAMS)
 
 shap_plots: $(TOP_N_SHAP_PLOT_DIRS)
 
+site_html: $(SITE_HTML) $(SITE_PLOTS) $(SITE_IMAGE_DIR)/impact_charts $(SITE_IMAGE_DIR)/price_charts
+	cp -r $(STATIC_HTML_DIR)/* $(SITE_DIR)
+
+$(SITE_IMAGE_DIR)/impact_charts: $(TOP_N_SHAP_PLOT_DIRS)
+	-rm -rf $@
+	mkdir -p $@
+	cp -r $(SHAP_PLOT_DIR)/xgb/* $@
+
+$(SITE_IMAGE_DIR)/price_charts: $(PRICE_FEATURE_PLOT_DIR) $(PRICE_PLOT_DIR)
+	-rm -rf $@
+	mkdir -p $@
+	cp -r $(PRICE_FEATURE_PLOT_DIR)/* $@
+	cp -r $(PRICE_PLOT_DIR)/* $@
+
 clean: clean_plots
 	rm -rf $(BUILD_DIR)
 
 clean_plots:
 	rm -rf $(PLOT_DIR)
+
+# How to render and HTML template for the site.
+$(SITE_DIR)/%.html: $(HTML_TEMPLATE_DIR)/%.html.j2
+	mkdir -p $(@D)
+	$(PYTHON) -m rih.rendersite --log $(LOGLEVEL)  -v $(YEAR) -t $(TOP_N_LIST_FILE) -o $@ $<
 
 # Mainly for debugging.
 list_top_n:
