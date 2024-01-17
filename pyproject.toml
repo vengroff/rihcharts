@@ -7,7 +7,7 @@ readme = "README.md"
 
 [tool.poetry.dependencies]
 python = "^3.11"
-impactchart = "^0.1.2"
+impactchart = "^0.1.4"
 PyYAML = "^6.0"
 censusdis = "^0.16.0"
 bayesian-optimization = "^1.4.2"
